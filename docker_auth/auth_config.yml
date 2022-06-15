@@ -1,0 +1,28 @@
+# Configure users for access.
+server:
+  addr: ":5001"
+  real_ip_header: "X-Forwarded-For"
+
+token:
+  issuer: "selfsignedissuer"  # Must match issuer in the Registry config.
+  expiration: 900
+  certificate: "/ssl/cert.pem"
+  key: "/ssl/key.pem"
+
+users:
+  # Password is specified as a BCrypt hash. Use `htpasswd -nB USERNAME` to generate.  
+  "admin":
+    password: "$2y$05$LO.vzwpWC5LZGqThvEfznu8qhb5SGqvBSWY1J3yZ4AxtMRZ3kN5jC"  # badmin
+  "": {}  # Allow anonymous (no "docker login") access.
+
+acl:
+  - match: {account: "admin"}
+    actions: ["*"]
+    comment: "Admin has full access to everything."
+  - match: {ip: "192.168.160.7"}  
+    actions: ["*"]
+    comment: "reg UI can pull stuff."
+  - match: {account: "", name: "hello-world"}
+    actions: ["pull"]
+    comment: "Anonymous users can pull \"hello-world\"."
+  # Access is denied by default.

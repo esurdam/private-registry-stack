@@ -1,0 +1,83 @@
+version: "3.9"  # optional since v1.27.0
+services:
+  # single entrypoint for whole docker
+  nginx:
+    image: lscr.io/linuxserver/nginx
+    container_name: registry_nginx
+    environment:
+      - PUID=1000
+      - PGID=1000
+      - TZ=Europe/London
+    volumes:
+      - ./site-default.conf:/config/nginx/site-confs/default
+      - ./ssl:/ssl:ro
+    ports:
+      - ${PROXY_PORT:?err}:58443 # registry
+    restart: unless-stopped
+  # private image registry 
+  registry:
+    container_name: registry
+    image: registry:2
+    environment:
+      REGISTRY_STORAGE_FILESYSTEM_ROOTDIRECTORY: /data
+      REGISTRY_AUTH_TOKEN_REALM: "https://${REGISTRY_DOMAIN:?err}/auth"
+      REGISTRY_AUTH_TOKEN_SERVICE: "Docker registry"
+      REGISTRY_AUTH_TOKEN_ISSUER: "selfsignedissuer"
+      REGISTRY_AUTH_TOKEN_ROOTCERTBUNDLE: "/ssl/cert.pem"
+    volumes:
+      - ${CONFIG_DIR:?err}/registry:/data
+      - ./ssl:/ssl:ro
+    depends_on:
+      - docker_auth
+  # auth for docker
+  # https://github.com/cesanta/docker_auth
+  docker_auth:
+    image: cesanta/docker_auth:1
+    container_name: docker_auth
+    volumes:
+      - ./docker_auth:/config:ro
+      - ./ssl:/ssl:ro
+      - /var/log/docker_auth:/logs
+    command: "/config/auth_config.yml"
+  # postgres-db for clair
+  # docker run -p 5432:5432 -d --name db arminc/clair-db:latest
+  clair-db:
+    image: arminc/clair-db:latest
+    container_name: clair-db
+    environment:
+      - PUID=1000
+      - PGID=1000
+  # clair itself
+  # https://github.com/arminc/clair-scanner
+  # docker run -p 6060:6060 --link db:postgres -d --name clair arminc/clair-local-scan:latest
+  clair:
+    image: arminc/clair-local-scan:latest
+    container_name: clair
+    depends_on:
+      - clair-db
+    links:
+      - clair-db:postgres
+    volumes:
+      - ./clair.config.yaml:/config/config.yaml:ro
+  # reg server - http frontend for registry
+  reg:
+    image: jess/reg:latest
+    container_name: reg
+    environment:
+      - REGISTRY_DOMAIN=${REGISTRY_DOMAIN:?err}
+    depends_on:
+      - clair
+      - registry
+      - nginx
+    extra_hosts:
+      - "${REGISTRY_DOMAIN}:192.168.160.1"
+    networks:
+      default:
+        ipv4_address: 192.168.160.7
+    command: ["server", "-r", "${REGISTRY_DOMAIN}", "--port", "80", "-k", "--clair", "http://clair" ]
+
+networks:
+  default:
+    ipam:
+      config:
+        - subnet: 192.168.160.0/24
