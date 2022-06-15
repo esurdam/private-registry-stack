@@ -1,4 +1,4 @@
-# registry
+# private-registry-stack
 
 Based on [Jess Frazelle's Private Docker Repo](https://blog.jessfraz.com/post/personal-infrastructure/#private-docker-registry) setup.
 
